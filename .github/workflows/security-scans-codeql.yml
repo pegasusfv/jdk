@@ -1,0 +1,83 @@
+name: 'Deep Security Scan'
+
+on:
+  push:
+    branches:
+      - testCodeAnalysis2
+
+jobs:
+  # ==========================================
+  # ENGINE 1: GITHUB CODEQL
+  # ==========================================
+  codeql-scan:
+    name: CodeQL Engine
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Java 27 EA
+        run: |
+          # curl -L https://download.java.net/java/early_access/jdk27/12/GPL/openjdk-27-ea+12_linux-x64_bin.tar.gz -o jdk_ea.tar.gz
+          curl -L https://download.java.net/java/early_access/jdk27/12/GPL/openjdk-27-ea+12_linux-x64_bin.tar.gz -o jdk_ea.tar.gz
+          tar -xzf jdk_ea.tar.gz
+          JDK_DIR=$(ls -d jdk-27*/ | head -n 1)
+          echo "JAVA_HOME=$PWD/$JDK_DIR" >> $GITHUB_ENV
+          echo "PATH=$PWD/$JDK_DIR/bin:$PATH" >> $GITHUB_PATH
+          export PATH="$PWD/$JDK_DIR/bin:$PATH"
+          java -version
+          
+      - name: Install Toolchain
+        run: |
+          sudo apt update && sudo apt install -y gcc-13 g++-13 libasound2-dev libcups2-dev libfontconfig1-dev libx11-dev libxext-dev libxrandr-dev libxrender-dev libxt-dev libxtst-dev
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 --slave /usr/bin/g++ g++ /usr/bin/g++-13
+          
+      - name: Configure
+        run: bash configure --with-boot-jdk=$JAVA_HOME --with-conf-name=linux-x64 --disable-generate-classlist --disable-cds-archive --disable-warnings-as-errors || (cat config.log && exit 1)
+        
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: cpp
+          queries: security-and-quality
+          
+      - name: Build
+        run: make images
+        
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:cpp-v2"
+    # ==========================================
+  # JAVA ENGINE 1: CODEQL (Source Only)
+  # ==========================================
+  codeql-java-scan-nobuild:
+    name: CodeQL Engine (Java)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Initialize CodeQL for Java
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java
+          build-mode: none
+          queries: security-and-quality
+          config: |
+            paths-ignore:
+              - 'test/**'
+              - 'build/**'
+              - 'make/**'
+              - 'docs/**'
+              
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-uncompiled-v2"
